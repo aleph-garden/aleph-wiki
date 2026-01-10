@@ -4,29 +4,44 @@ This setup provides Solid protocol compatibility with SPARQL querying via Comuni
 
 ## What's Installed
 
-- **Community Solid Server (CSS)**: Local Solid pod server (runs via npx)
+- **Oxigraph**: Fast SPARQL database backend (Rust-based, via Nix)
+- **Community Solid Server (CSS)**: Local Solid pod server with hybrid storage (runs via npx)
 - **Comunica**: Browser-compatible SPARQL query engine (@comunica/query-sparql v3.x)
-- **Concurrently**: Run both services together
+- **Concurrently**: Run all services together
 - **N3**: RDF parsing and serialization library
 
 ## Quick Start
 
 ```bash
-npm run dev:all
+nix develop  # Load Oxigraph into environment
+bun run dev:all
 ```
 
 This starts:
+- **Oxigraph SPARQL database**: http://localhost:7878/
+- **Solid pod server (CSS)**: http://localhost:3000/
 - **Vite dev server**: http://localhost:5173/
-- **Solid pod server**: http://localhost:3000/
 
 ## Individual Commands
 
 ```bash
-npm run dev     # Just Vite
-npm run solid   # Just CSS
+bun run dev       # Just Vite
+bun run oxigraph  # Just Oxigraph
+bun run solid     # Just CSS (requires Oxigraph running)
 ```
 
 ## Architecture
+
+### Hybrid Storage with Oxigraph
+
+CSS now uses **hybrid storage**:
+- **Internal data** (accounts, configs): File-based storage (`.solid-data/`)
+- **Pod RDF data**: Oxigraph SPARQL backend (`.oxigraph-data/`)
+
+This gives you:
+- Simple account management
+- Fast SPARQL queries on pod data
+- Native triple store for RDF operations
 
 ### CSS via npx (Separate Installation)
 
@@ -57,16 +72,17 @@ Comunica fetches RDF documents from pods and evaluates SPARQL locally, so it doe
 
 ## Performance with Large Datasets
 
-Comunica includes:
+With Oxigraph as the SPARQL backend, you get:
+- Native triple store performance for RDF operations
+- Fast indexed queries on your pod data
+- SPARQL 1.1 Query and Update support
+- Persistent storage with RocksDB
+
+Comunica (for federated queries) includes:
 - Smart caching and memoization
 - Parallel query execution across sources
 - Adaptive query optimization
 - Link traversal for federated queries
-
-For **your own data**, if you need even more performance later, you can:
-- Upgrade CSS with a SPARQL backend (like Oxigraph)
-- Your pod becomes faster for complex queries
-- Other apps still access it via standard Solid protocol
 
 ## Example Usage
 
@@ -78,12 +94,14 @@ See `src/comunica-example.js` for:
 
 ## Data Persistence
 
-- Solid pod data: `.solid-data/` (gitignored)
+- Oxigraph RDF triples: `.oxigraph-data/` (gitignored)
+- CSS internal data: `.solid-data/` (gitignored)
 - Data persists between restarts
 
 ## Next Steps
 
-1. Start exploring with `npm run dev:all`
-2. Check out the Comunica examples in `src/comunica-example.js`
-3. Integrate SPARQL queries into your RDF graph viewer
-4. Test with real Solid pods when ready
+1. Start the stack with `nix develop` then `bun run dev:all`
+2. Access Oxigraph UI at http://localhost:7878 to run SPARQL queries
+3. Check out the Comunica examples in `src/comunica-example.js`
+4. Integrate SPARQL queries into your RDF graph viewer
+5. Test with real Solid pods when ready

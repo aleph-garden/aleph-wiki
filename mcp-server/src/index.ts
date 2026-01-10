@@ -6,6 +6,7 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprot
 import { z } from "zod";
 import { Session } from "@inrupt/solid-client-authn-node";
 import { Parser, Store } from "n3";
+import { QueryEngine } from "@comunica/query-sparql";
 
 /**
  * MCP Server for Solid Pod RDF Operations
@@ -133,6 +134,91 @@ export async function sparqlMatch(
   }));
 }
 
+// Create a singleton QueryEngine instance
+let queryEngine: QueryEngine | null = null;
+
+function getQueryEngine(): QueryEngine {
+  if (!queryEngine) {
+    queryEngine = new QueryEngine();
+  }
+  return queryEngine;
+}
+
+/**
+ * Execute SPARQL query using Comunica QueryEngine
+ */
+export async function executeSparqlQuery(url: string, query: string): Promise<string> {
+  if (!solidSession) {
+    throw new Error("Solid session not initialized");
+  }
+
+  const engine = getQueryEngine();
+
+  // Execute query with authenticated fetch
+  const result = await engine.query(query, {
+    sources: [url],
+    fetch: solidSession.fetch,
+    httpCacheDisabled: true,
+  });
+
+  // Detect query type and format output accordingly
+  if (result.resultType === 'bindings') {
+    // SELECT query - return SPARQL JSON results
+    const bindingsStream = await result.execute();
+    const bindingsArray = await bindingsStream.toArray();
+
+    const vars = bindingsArray.length > 0
+      ? Array.from(bindingsArray[0].keys()).map((key: any) => key.value)
+      : [];
+
+    return JSON.stringify({
+      head: { vars },
+      results: {
+        bindings: bindingsArray.map((binding) => {
+          const obj: any = {};
+          binding.forEach((value, key) => {
+            obj[key.value] = {
+              type: value.termType === 'NamedNode' ? 'uri' : 'literal',
+              value: value.value,
+              ...(value.language && { 'xml:lang': value.language }),
+            };
+          });
+          return obj;
+        }),
+      },
+    });
+  } else if (result.resultType === 'quads') {
+    // CONSTRUCT query - return Turtle format
+    const quadsStream = await result.execute();
+    const quadsArray = await quadsStream.toArray();
+
+    // Convert quads to Turtle format
+    const store = new Store(quadsArray);
+    const { Writer } = await import('n3');
+    const writer = new Writer({
+      format: 'text/turtle',
+      prefixes: {
+        skos: 'http://www.w3.org/2004/02/skos/core#',
+        schema: 'http://schema.org/',
+      },
+    });
+
+    return new Promise((resolve, reject) => {
+      writer.addQuads(store.getQuads(null, null, null, null));
+      writer.end((error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      });
+    });
+  } else if (result.resultType === 'boolean') {
+    // ASK query - return boolean JSON
+    const booleanResult = await result.execute();
+    return JSON.stringify({ boolean: booleanResult });
+  }
+
+  throw new Error(`Unsupported query result type: ${result.resultType}`);
+}
+
 /**
  * Register MCP tools on the server
  */
@@ -214,6 +300,24 @@ export function registerTools(server: Server) {
         required: ["url"],
       },
     },
+    {
+      name: "sparql_query",
+      description: "Execute SPARQL query against a Solid Pod resource using Comunica",
+      inputSchema: {
+        type: "object",
+        properties: {
+          url: {
+            type: "string",
+            description: "URL of the RDF resource to query",
+          },
+          query: {
+            type: "string",
+            description: "SPARQL query to execute (SELECT, CONSTRUCT, or ASK)",
+          },
+        },
+        required: ["url", "query"],
+      },
+    },
   ];
 
   server.setRequestHandler(
@@ -283,6 +387,19 @@ export function registerTools(server: Server) {
             {
               type: "text",
               text: JSON.stringify(matches, null, 2),
+            },
+          ],
+        };
+      }
+
+      if (request.params.name === "sparql_query") {
+        const { url, query } = request.params.arguments as any;
+        const result = await executeSparqlQuery(url, query);
+        return {
+          content: [
+            {
+              type: "text",
+              text: result,
             },
           ],
         };

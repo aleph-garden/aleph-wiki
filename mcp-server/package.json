@@ -8,7 +8,7 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "test": "vitest",
+    "test": "vitest run",
     "test:watch": "vitest --watch",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage"
@@ -21,6 +21,7 @@
     "knowledge-graph"
   ],
   "dependencies": {
+    "@comunica/query-sparql": "^5.0.1",
     "@inrupt/solid-client": "^2.0.1",
     "@inrupt/solid-client-authn-node": "^2.0.1",
     "@modelcontextprotocol/sdk": "^1.0.6",

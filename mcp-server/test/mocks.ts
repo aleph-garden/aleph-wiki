@@ -22,21 +22,18 @@ export const createMockSession = () => {
  * Mock fetch response helper
  */
 export const mockFetchResponse = (data: any, status = 200, contentType = 'text/turtle') => {
-  return Promise.resolve({
-    ok: status >= 200 && status < 300,
-    status,
-    statusText: status === 200 ? 'OK' : 'Error',
-    headers: {
-      get: (name: string) => {
-        if (name.toLowerCase() === 'content-type') {
-          return contentType;
-        }
-        return null;
-      },
-    },
-    text: () => Promise.resolve(typeof data === 'string' ? data : JSON.stringify(data)),
-    json: () => Promise.resolve(typeof data === 'string' ? JSON.parse(data) : data),
-  } as Response);
+  // Create proper Headers object
+  const headers = new Headers();
+  headers.set('content-type', contentType);
+
+  return Promise.resolve(new Response(
+    typeof data === 'string' ? data : JSON.stringify(data),
+    {
+      status,
+      statusText: status === 200 ? 'OK' : 'Error',
+      headers,
+    }
+  ));
 };
 
 /**

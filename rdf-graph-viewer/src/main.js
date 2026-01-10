@@ -4,13 +4,13 @@ import { Parser } from 'n3';
 
 class RDFGraphViewer {
   constructor() {
-    this.states = [];
+    this.sessions = []; // Array of {sessionUri, startTime, interactions: []}
+    this.states = []; // Flattened array of states for rendering
     this.currentStateIndex = 0;
     this.lastRenderedIndex = -1;
     this.simulation = null;
     this.isLive = true;
     this.isPaused = false;
-    this.startTime = Date.now();
     this.lastRdfContent = null;
 
     // Settings
@@ -44,6 +44,30 @@ class RDFGraphViewer {
 
     // Handle window resize
     window.addEventListener('resize', () => this.handleResize());
+
+    // Setup keyboard shortcuts
+    this.setupKeyboardShortcuts();
+  }
+
+  setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+      // Ignore if typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      switch(e.key) {
+        case '/':
+          e.preventDefault();
+          // TODO: Implement search
+          console.log('Search not yet implemented');
+          break;
+        case '?':
+          // TODO: Implement help
+          console.log('Help not yet implemented');
+          break;
+      }
+    });
   }
 
   setupSettings() {
@@ -133,29 +157,10 @@ class RDFGraphViewer {
   }
 
   setupTimeline() {
-    this.timeSlider = document.getElementById('time-slider');
-    this.tickSlider = document.getElementById('tick-slider');
-    this.currentTimeSpan = document.getElementById('current-time');
-    this.currentTickSpan = document.getElementById('current-tick');
-    this.totalStatesSpan = document.getElementById('total-states');
+    this.sessionTimeline = document.getElementById('session-timeline');
+    this.currentSessionSpan = document.getElementById('current-session');
+    this.currentInteractionSpan = document.getElementById('current-interaction');
     this.liveBtn = document.getElementById('live-btn');
-    this.timeProgress = document.getElementById('time-progress');
-    this.tickProgress = document.getElementById('tick-progress');
-    this.timeMarkers = document.getElementById('time-markers');
-    this.tickMarkers = document.getElementById('tick-markers');
-    this.timelineWrapper = document.getElementById('timeline-wrapper');
-
-    // Time slider uses continuous time values
-    this.timeSlider.addEventListener('input', (e) => {
-      const timeValue = parseFloat(e.target.value);
-      this.seekToTime(timeValue);
-    });
-
-    // Tick slider uses discrete state indices
-    this.tickSlider.addEventListener('input', (e) => {
-      const tickValue = parseInt(e.target.value);
-      this.seekToTick(tickValue);
-    });
 
     // Live button toggles live mode
     this.liveBtn.addEventListener('click', () => {
@@ -163,44 +168,14 @@ class RDFGraphViewer {
         this.goToLive();
       }
     });
-
-    // Clicking on timeline disables live mode
-    this.timelineWrapper.addEventListener('click', (e) => {
-      if (this.isLive) {
-        this.isLive = false;
-        this.isPaused = true;
-        this.updateLiveStatus();
-      }
-    });
   }
 
-  seekToTime(timeValue) {
-    // Find the state closest to this time
-    if (this.states.length === 0) return;
+  seekToState(stateIndex) {
+    if (stateIndex < 0 || stateIndex >= this.states.length) return;
 
-    let closestIndex = 0;
-    let minDiff = Math.abs(this.states[0].timestamp - timeValue);
-
-    for (let i = 1; i < this.states.length; i++) {
-      const diff = Math.abs(this.states[i].timestamp - timeValue);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestIndex = i;
-      }
-    }
-
-    this.currentStateIndex = closestIndex;
-    this.tickSlider.value = closestIndex;
-    this.updateLiveStatus();
-    this.renderState(this.currentStateIndex);
-    this.updateTimelineInfo();
-  }
-
-  seekToTick(tickValue) {
-    this.currentStateIndex = tickValue;
-    if (this.states[tickValue]) {
-      this.timeSlider.value = this.states[tickValue].timestamp;
-    }
+    this.currentStateIndex = stateIndex;
+    this.isLive = false;
+    this.isPaused = true;
     this.updateLiveStatus();
     this.renderState(this.currentStateIndex);
     this.updateTimelineInfo();
@@ -224,12 +199,10 @@ class RDFGraphViewer {
       this.isLive = true;
       this.isPaused = false;
       this.currentStateIndex = this.states.length - 1;
-      const lastState = this.states[this.currentStateIndex];
-      this.tickSlider.value = this.currentStateIndex;
-      this.timeSlider.value = lastState.timestamp;
       this.renderState(this.currentStateIndex);
       this.updateTimelineInfo();
       this.updateLiveStatus();
+      this.updateSessionTimeline();
     }
   }
 
@@ -279,7 +252,7 @@ class RDFGraphViewer {
           triples.push(triple);
         } else {
           // Parsing complete
-          this.addNewState(triples);
+          this.extractSessionsAndInteractions(triples);
         }
       });
     } catch (error) {
@@ -287,69 +260,219 @@ class RDFGraphViewer {
     }
   }
 
-  addNewState(triples) {
-    const graphData = this.triplesToGraph(triples);
+  extractSessionsAndInteractions(triples) {
+    // Build a map of sessions and interactions
+    const sessionMap = new Map();
+    const interactionMap = new Map();
 
-    // Add timestamp
-    const timestamp = (Date.now() - this.startTime) / 1000; // seconds since start
-    graphData.timestamp = timestamp;
+    // First pass: collect sessions and interactions
+    triples.forEach(triple => {
+      const subject = triple.subject.value;
+      const predicate = this.shortenURI(triple.predicate.value);
+      const object = triple.object.value;
 
-    // Check if this state is different from the last one
-    if (this.states.length > 0) {
-      const lastState = this.states[this.states.length - 1];
-      const lastData = { nodes: lastState.nodes, links: lastState.links };
-      const currentData = { nodes: graphData.nodes, links: graphData.links };
-
-      // Don't compare if we're in the middle of rebuilding (states cleared)
-      if (this.states.length > 0 && JSON.stringify(lastData) === JSON.stringify(currentData)) {
-        console.log('Skipping duplicate state');
-        return; // No change, don't add duplicate state
+      // Find sessions
+      if (predicate === 'type' && (object.includes('Session') || subject.includes('session:'))) {
+        if (!sessionMap.has(subject)) {
+          sessionMap.set(subject, { uri: subject, startTime: null, interactions: [] });
+        }
       }
-    }
 
-    console.log('Adding new state with', graphData.nodes.length, 'nodes');
-    this.states.push(graphData);
+      // Find interactions
+      if (predicate === 'type' && object.includes('InteractionAction')) {
+        if (!interactionMap.has(subject)) {
+          interactionMap.set(subject, { uri: subject, startTime: null, session: null });
+        }
+      }
 
-    // Update timeline ranges
-    const maxTime = this.states[this.states.length - 1].timestamp;
-    this.timeSlider.max = maxTime;
-    this.tickSlider.max = this.states.length - 1;
+      // Get session start times
+      if (predicate === 'startTime' && sessionMap.has(subject)) {
+        sessionMap.get(subject).startTime = object;
+      }
 
-    // Only auto-advance if we're in live mode (not paused)
-    if (this.isLive && !this.isPaused) {
-      this.currentStateIndex = this.states.length - 1;
-      this.tickSlider.value = this.currentStateIndex;
-      this.timeSlider.value = timestamp;
-      this.renderState(this.currentStateIndex, true);
-    }
+      // Get interaction start times and link to sessions
+      if (predicate === 'startTime' && interactionMap.has(subject)) {
+        interactionMap.get(subject).startTime = object;
+      }
 
-    this.updateTimelineMarkers();
-    this.updateTimelineInfo();
-  }
-
-  updateTimelineMarkers() {
-    // Update tick markers
-    this.tickMarkers.innerHTML = '';
-    this.states.forEach((state, index) => {
-      const marker = document.createElement('div');
-      marker.className = 'timeline-marker';
-      if (index % 5 === 0) marker.classList.add('major');
-      marker.style.left = `${(index / (this.states.length - 1)) * 100}%`;
-      this.tickMarkers.appendChild(marker);
+      // Link interactions to sessions via agent property
+      if (predicate === 'agent' && interactionMap.has(subject)) {
+        interactionMap.get(subject).session = object;
+      }
     });
 
-    // Update time markers - every 10 seconds
-    this.timeMarkers.innerHTML = '';
-    if (this.states.length > 0) {
-      const maxTime = this.states[this.states.length - 1].timestamp;
-      const interval = 10; // seconds
-      for (let t = 0; t <= maxTime; t += interval) {
-        const marker = document.createElement('div');
-        marker.className = 'timeline-marker major';
-        marker.style.left = `${(t / maxTime) * 100}%`;
-        this.timeMarkers.appendChild(marker);
+    // Link interactions to their sessions
+    interactionMap.forEach((interaction, uri) => {
+      if (interaction.session && sessionMap.has(interaction.session)) {
+        sessionMap.get(interaction.session).interactions.push(interaction);
       }
+    });
+
+    // Sort sessions by start time
+    this.sessions = Array.from(sessionMap.values())
+      .filter(s => s.startTime)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    // Sort interactions within each session
+    this.sessions.forEach(session => {
+      session.interactions.sort((a, b) => a.startTime.localeCompare(b.startTime));
+    });
+
+    console.log('Extracted sessions:', this.sessions);
+
+    // Generate states for each interaction
+    this.generateStatesFromSessions(triples);
+  }
+
+  generateStatesFromSessions(triples) {
+    const newStates = [];
+
+    // Group triples by their subject (interaction URI)
+    const triplesByInteraction = new Map();
+
+    // First, separate interaction metadata from content triples
+    triples.forEach(triple => {
+      const subject = triple.subject.value;
+      const predicate = this.shortenURI(triple.predicate.value);
+
+      // Skip interaction metadata triples (these describe the interactions themselves)
+      if (subject.includes('interaction:') || subject.includes('session:') || subject.includes('agent:')) {
+        return;
+      }
+
+      // For now, we'll include all content triples in all states
+      // In a more sophisticated version, we'd track which interaction added each triple
+      if (!triplesByInteraction.has('all')) {
+        triplesByInteraction.set('all', []);
+      }
+      triplesByInteraction.get('all').push(triple);
+    });
+
+    const allContentTriples = triplesByInteraction.get('all') || [];
+
+    // For now, show cumulative graph at each interaction
+    // TODO: Track which triples were added by each interaction
+    let cumulativeTriples = [];
+
+    this.sessions.forEach((session, sessionIndex) => {
+      session.interactions.forEach((interaction, interactionIndex) => {
+        // For the first interaction, show some initial triples
+        // For subsequent ones, potentially add more
+        // For now, just show all content progressively
+
+        const portionSize = Math.floor(allContentTriples.length / this.sessions.reduce((sum, s) => sum + s.interactions.length, 0));
+        const startIndex = (sessionIndex * session.interactions.length + interactionIndex) * portionSize;
+        const endIndex = Math.min(startIndex + portionSize, allContentTriples.length);
+
+        // If this is the last interaction, include all remaining triples
+        const isLastInteraction = sessionIndex === this.sessions.length - 1 &&
+                                  interactionIndex === session.interactions.length - 1;
+
+        const triplesToShow = isLastInteraction ? allContentTriples : allContentTriples.slice(0, endIndex);
+
+        const graphData = this.triplesToGraph(triplesToShow);
+
+        console.log(`State ${newStates.length}: ${triplesToShow.length} triples, ${graphData.nodes.length} nodes, ${graphData.links.length} links`);
+
+        newStates.push({
+          ...graphData,
+          sessionIndex,
+          interactionIndex,
+          sessionUri: session.uri,
+          interactionUri: interaction.uri,
+          timestamp: interaction.startTime,
+          tripleCount: triplesToShow.length
+        });
+      });
+    });
+
+    // Check if states actually changed
+    if (JSON.stringify(this.states) !== JSON.stringify(newStates)) {
+      this.states = newStates;
+      console.log('Generated', this.states.length, 'states from sessions');
+
+      // Auto-advance to latest if in live mode
+      if (this.isLive && !this.isPaused) {
+        this.currentStateIndex = this.states.length - 1;
+        this.renderState(this.currentStateIndex, true);
+      }
+
+      this.updateSessionTimeline();
     }
+  }
+
+  updateSessionTimeline() {
+    this.sessionTimeline.innerHTML = '';
+
+    if (this.sessions.length === 0) return;
+
+    let stateIndex = 0;
+
+    this.sessions.forEach((session, sessionIndex) => {
+      // Create session container
+      const sessionContainer = document.createElement('div');
+      sessionContainer.className = 'session-container';
+
+      session.interactions.forEach((interaction, interactionIndex) => {
+        const currentStateIndex = stateIndex; // Capture the current value
+
+        const interactionBtn = document.createElement('button');
+        interactionBtn.className = 'interaction-btn';
+        interactionBtn.textContent = `${interactionIndex + 1}`;
+        interactionBtn.title = `Interaction ${interactionIndex + 1}`;
+        interactionBtn.dataset.stateIndex = currentStateIndex; // Store in data attribute
+
+        // Highlight current interaction
+        if (currentStateIndex === this.currentStateIndex) {
+          interactionBtn.classList.add('active');
+        }
+
+        // Click to navigate to this interaction
+        interactionBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const targetIndex = parseInt(e.currentTarget.dataset.stateIndex);
+          console.log('Interaction button clicked, seeking to state', targetIndex);
+          this.seekToState(targetIndex);
+        });
+
+        sessionContainer.appendChild(interactionBtn);
+        stateIndex++;
+      });
+
+      this.sessionTimeline.appendChild(sessionContainer);
+
+      // Add session separator (except after last session)
+      if (sessionIndex < this.sessions.length - 1) {
+        const separator = document.createElement('div');
+        separator.className = 'session-separator';
+        separator.textContent = '...';
+
+        // Calculate time difference
+        const currentSessionTime = new Date(session.startTime);
+        const nextSessionTime = new Date(this.sessions[sessionIndex + 1].startTime);
+        const diffMs = nextSessionTime - currentSessionTime;
+
+        const tooltip = document.createElement('div');
+        tooltip.className = 'session-separator-tooltip';
+        tooltip.textContent = this.formatTimeDifference(diffMs);
+        separator.appendChild(tooltip);
+
+        this.sessionTimeline.appendChild(separator);
+      }
+    });
+  }
+
+  formatTimeDifference(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days}d ${hours % 24}h`;
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+    return `${seconds}s`;
   }
 
   triplesToGraph(triples) {
@@ -468,10 +591,33 @@ class RDFGraphViewer {
       return;
     }
 
+    const previousData = this.lastRenderedIndex >= 0 ? this.states[this.lastRenderedIndex] : null;
     this.lastRenderedIndex = index;
     const data = this.states[index];
 
     console.log('Rendering state', index, 'with', data.nodes.length, 'nodes:', data.nodes.map(n => n.id));
+
+    // Preserve existing node positions
+    if (previousData && this.simulation) {
+      const positionMap = new Map();
+      this.simulation.nodes().forEach(node => {
+        positionMap.set(node.id, { x: node.x, y: node.y, vx: node.vx, vy: node.vy });
+      });
+
+      // Apply saved positions to new data
+      data.nodes.forEach(node => {
+        const saved = positionMap.get(node.id);
+        if (saved) {
+          node.x = saved.x;
+          node.y = saved.y;
+          node.vx = 0;
+          node.vy = 0;
+          // Pin the node position to prevent gravity movement
+          node.fx = saved.x;
+          node.fy = saved.y;
+        }
+      });
+    }
 
     // Update or create force simulation
     if (!this.simulation) {
@@ -479,8 +625,13 @@ class RDFGraphViewer {
         .force('link', d3.forceLink().id(d => d.id).distance(this.settings.linkDistance))
         .force('charge', d3.forceManyBody().strength(this.settings.chargeStrength))
         .force('center', d3.forceCenter(this.width / 2, this.height / 2))
-        .force('collision', d3.forceCollide().radius(50));
+        .force('collision', d3.forceCollide().radius(50))
+        .alphaDecay(0.05); // Faster settling
     }
+
+    // Identify new and removed links
+    const previousLinkIds = previousData ? new Set(previousData.links.map(l => `${l.source.id || l.source}-${l.target.id || l.target}-${l.predicate}`)) : new Set();
+    const currentLinkIds = new Set(data.links.map(l => `${l.source.id || l.source}-${l.target.id || l.target}-${l.predicate}`));
 
     // Update links
     const link = this.linkGroup
@@ -488,23 +639,40 @@ class RDFGraphViewer {
       .data(data.links, d => `${d.source.id || d.source}-${d.target.id || d.target}-${d.predicate}`);
 
     link.exit()
+      .classed('removed', true)
       .transition()
-      .duration(animate ? 500 : 0)
+      .duration(500)
       .style('opacity', 0)
+      .style('stroke', '#ff4444')
       .remove();
 
     const linkEnter = link.enter()
       .append('path')
       .attr('class', 'link')
-      .style('opacity', 0);
+      .classed('new', true)
+      .style('opacity', 0)
+      .style('stroke', '#44ff44');
 
     const linkMerge = linkEnter.merge(link);
 
-    if (animate) {
-      linkMerge.transition().duration(500).style('opacity', 1);
-    } else {
-      linkMerge.style('opacity', 1);
-    }
+    // Mark new links
+    linkMerge.each(function(d) {
+      const linkId = `${d.source.id || d.source}-${d.target.id || d.target}-${d.predicate}`;
+      const isNew = !previousLinkIds.has(linkId);
+      d3.select(this).classed('new', isNew);
+    });
+
+    linkMerge
+      .transition()
+      .duration(500)
+      .style('opacity', 1)
+      .style('stroke', d => {
+        const linkId = `${d.source.id || d.source}-${d.target.id || d.target}-${d.predicate}`;
+        return !previousLinkIds.has(linkId) ? '#44ff44' : '#666';
+      })
+      .transition()
+      .delay(1500)
+      .style('stroke', '#666');
 
     // Update link labels
     const linkLabel = this.linkLabelGroup
@@ -527,21 +695,30 @@ class RDFGraphViewer {
       linkLabelMerge.style('opacity', 1);
     }
 
+    // Identify new and removed nodes
+    const previousNodeIds = previousData ? new Set(previousData.nodes.map(n => n.id)) : new Set();
+    const currentNodeIds = new Set(data.nodes.map(n => n.id));
+
     // Update nodes
     const node = this.nodeGroup
       .selectAll('.node')
       .data(data.nodes, d => d.id);
 
     node.exit()
+      .classed('removed', true)
+      .select('circle')
       .transition()
-      .duration(animate ? 500 : 0)
-      .attr('r', 0)
+      .duration(500)
+      .attr('r', this.settings.nodeSize * 1.5)
+      .style('fill', '#ff4444')
       .style('opacity', 0)
-      .remove();
+      .end()
+      .then(() => node.exit().remove());
 
     const nodeEnter = node.enter()
       .append('g')
       .attr('class', 'node')
+      .classed('new', true)
       .call(d3.drag()
         .on('start', (event, d) => this.dragStarted(event, d))
         .on('drag', (event, d) => this.dragged(event, d))
@@ -549,7 +726,9 @@ class RDFGraphViewer {
 
     nodeEnter.append('circle')
       .attr('r', 0)
-      .attr('fill', (d, i) => d3.schemeCategory10[i % 10]);
+      .attr('fill', (d, i) => d3.schemeCategory10[i % 10])
+      .style('stroke', '#44ff44')
+      .style('stroke-width', 3);
 
     // Add type tags
     const typeGroup = nodeEnter.append('g')
@@ -590,20 +769,27 @@ class RDFGraphViewer {
 
     const nodeMerge = nodeEnter.merge(node);
 
-    if (animate) {
-      nodeMerge.select('circle')
-        .transition()
-        .duration(500)
-        .attr('r', this.settings.nodeSize);
+    // Mark new nodes and animate
+    nodeMerge.each(function(d) {
+      const isNew = !previousNodeIds.has(d.id);
+      d3.select(this).classed('new', isNew);
+    });
 
-      nodeMerge.select('text')
-        .transition()
-        .duration(500)
-        .style('opacity', 1);
-    } else {
-      nodeMerge.select('circle').attr('r', this.settings.nodeSize);
-      nodeMerge.select('text').style('opacity', 1);
-    }
+    nodeMerge.select('circle')
+      .transition()
+      .duration(500)
+      .attr('r', this.settings.nodeSize)
+      .style('stroke', d => !previousNodeIds.has(d.id) ? '#44ff44' : 'none')
+      .style('stroke-width', d => !previousNodeIds.has(d.id) ? 3 : 0)
+      .transition()
+      .delay(1500)
+      .style('stroke', 'none')
+      .style('stroke-width', 0);
+
+    nodeMerge.select('text')
+      .transition()
+      .duration(500)
+      .style('opacity', 1);
 
     // Apply type tags visibility
     nodeMerge.select('.type-tags')
@@ -615,7 +801,14 @@ class RDFGraphViewer {
       .on('tick', () => this.ticked(linkMerge, linkLabelMerge, nodeMerge));
 
     this.simulation.force('link').links(data.links);
-    this.simulation.alpha(1).restart();
+
+    // Only apply gentle force if there are new nodes
+    const hasNewNodes = data.nodes.some(n => !previousNodeIds.has(n.id));
+    if (hasNewNodes) {
+      this.simulation.alpha(0.3).restart(); // Gentle restart for new nodes
+    } else {
+      this.simulation.alpha(0.1).restart(); // Very gentle for position adjustments only
+    }
   }
 
   ticked(link, linkLabel, node) {
@@ -657,31 +850,20 @@ class RDFGraphViewer {
   }
 
   updateTimelineInfo() {
-    // Format time as MM:SS
-    const formatTime = (seconds) => {
-      const mins = Math.floor(seconds / 60);
-      const secs = Math.floor(seconds % 60);
-      return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
-
     if (this.states.length > 0 && this.states[this.currentStateIndex]) {
-      const currentTime = this.states[this.currentStateIndex].timestamp;
-      this.currentTimeSpan.textContent = formatTime(currentTime);
-      this.currentTickSpan.textContent = `Tick: ${this.currentStateIndex}`;
-      this.totalStatesSpan.textContent = `States: ${this.states.length}`;
+      const state = this.states[this.currentStateIndex];
+      const sessionUri = this.shortenURI(state.sessionUri);
+      const interactionUri = this.shortenURI(state.interactionUri);
 
-      // Update progress bars
-      const maxTime = this.states[this.states.length - 1].timestamp;
-      const timeProgress = (currentTime / maxTime) * 100;
-      const tickProgress = ((this.currentStateIndex + 1) / this.states.length) * 100;
-
-      this.timeProgress.style.width = `${timeProgress}%`;
-      this.tickProgress.style.width = `${tickProgress}%`;
+      this.currentSessionSpan.textContent = `Session: ${sessionUri}`;
+      this.currentInteractionSpan.textContent = `Interaction: ${interactionUri} (${state.interactionIndex + 1}/${this.sessions[state.sessionIndex].interactions.length})`;
     } else {
-      this.currentTimeSpan.textContent = '0:00';
-      this.currentTickSpan.textContent = 'Tick: 0';
-      this.totalStatesSpan.textContent = 'States: 0';
+      this.currentSessionSpan.textContent = 'No session';
+      this.currentInteractionSpan.textContent = 'No interaction';
     }
+
+    // Update active state in timeline
+    this.updateSessionTimeline();
   }
 
   handleResize() {

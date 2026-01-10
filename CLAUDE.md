@@ -8,7 +8,8 @@ significant new features. Default to direct implementation for small tasks.
 devshell available (`nix develop`) that provides bun and other dependencies.
 
 **Testing**: Tests are located in `test/` directories (not `__tests__/` or co-located).
-Run tests with `bun test`. Add tests before implementing features when using TDD.
+Run tests with `bun run test` (in app/, use `bun test`). The mcp-server requires Node.js
+via vitest due to Comunica compatibility. Add tests before implementing features when using TDD.
 
 **Commits**: Always reference `.conventional-commits.md` to determine the correct format
 and type for commit messages. Follow the specification exactly. Keep commit messages

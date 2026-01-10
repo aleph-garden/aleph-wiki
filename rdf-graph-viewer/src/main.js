@@ -446,7 +446,42 @@ INSERT DATA {
       `;
 
       const triplesData = await this.executeSparqlQuery(triplesQuery);
-      this.generateStatesFromTriples(triplesData);
+
+      // Query for session and interaction metadata triples
+      const metadataQuery = `
+        PREFIX schema: <http://schema.org/>
+        SELECT ?s ?p ?o ?interaction ?interactionTime
+        WHERE {
+          {
+            # Session metadata
+            ?s a ?sessionType ;
+               ?p ?o .
+            FILTER(CONTAINS(STR(?sessionType), "Session"))
+            FILTER(?p != schema:result)
+            # Get the first interaction of this session for timestamp
+            ?interaction schema:agent ?s ;
+                        schema:startTime ?interactionTime .
+          }
+          UNION
+          {
+            # Interaction metadata
+            ?s a ?interactionType ;
+               ?p ?o .
+            FILTER(CONTAINS(STR(?interactionType), "Interaction"))
+            FILTER(?p != schema:result)
+            # Use the interaction's own timestamp
+            ?s schema:startTime ?interactionTime .
+            BIND(?s AS ?interaction)
+          }
+        }
+        ORDER BY ?interactionTime
+      `;
+
+      const metadataData = await this.executeSparqlQuery(metadataQuery);
+
+      // Combine content and metadata triples
+      const allTriples = [...metadataData, ...triplesData];
+      this.generateStatesFromTriples(allTriples);
 
     } catch (error) {
       console.error('Error loading from SPARQL:', error);
@@ -521,13 +556,23 @@ INSERT DATA {
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
     // Sort interactions within each session and remove duplicates
-    this.sessions.forEach(session => {
+    this.sessions.forEach((session, index) => {
       const uniqueInteractions = new Map();
       session.interactions.forEach(int => {
         uniqueInteractions.set(int.uri, int);
       });
       session.interactions = Array.from(uniqueInteractions.values())
         .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+      // Map session nodes to their session index for clustering
+      const sessionShortUri = this.shortenURI(session.uri);
+      this.nodeToSession.set(sessionShortUri, index);
+
+      // Map interaction nodes to their session index for clustering
+      session.interactions.forEach(interaction => {
+        const interactionShortUri = this.shortenURI(interaction.uri);
+        this.nodeToSession.set(interactionShortUri, index);
+      });
     });
 
     console.log('Extracted sessions:', this.sessions);

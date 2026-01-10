@@ -1,6 +1,10 @@
 # aleph.wiki
 
-An experimental tool for connection-based learning through RDF knowledge graphs. Aleph.wiki enables interactive learning sessions where concepts are captured as semantic triples in Turtle format, building a persistent knowledge graph that grows across sessions. The graph uses standard ontologies (SKOS, FOAF, schema.org) to create rich, queryable representations of learning material with cross-linked concepts, multilingual labels, and temporal relationships.
+An experimental tool for connection-based learning through RDF knowledge graphs.
+
+---
+
+Aleph.wiki enables interactive learning sessions where concepts are captured as semantic triples in Turtle format, building a persistent knowledge graph that grows across sessions. The graph uses standard ontologies (SKOS, FOAF, schema.org) to create rich, queryable representations of learning material with cross-linked concepts, multilingual labels, and temporal relationships.
 
 Each interaction creates nodes in the graph with proper semantic relationships, allowing you to visualize how concepts connect, track learning across time, and explore knowledge through multiple dimensions. The system is designed for minimal interruption during learning - you provide brief inputs, and the assistant responds by writing structured RDF data to `index.ttl`, capturing both the concepts and the context of each learning interaction.
 
@@ -92,3 +96,7 @@ The graph structure allows filtering by session, time period, topic hierarchy, o
 - [ ] Multi-user collaboration features
 - [ ] Advanced graph layouts (hierarchical, temporal, semantic)
 - [ ] Export/import functionality
+
+## License
+
+AGPL-3.0 - see [LICENSE](./LICENSE) for details.

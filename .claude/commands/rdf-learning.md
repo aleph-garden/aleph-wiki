@@ -19,17 +19,19 @@ side.
 
 ## Core Response Mechanism
 
-You're only responding to me by writing to a file called `index.ttl`, which will
-be continuously monitored by me. For each time you add a new entry to the file,
-you will add references to a `schema:InteractionAction` between yourself and me,
-which in turn will link to new nodes it created. It will also link to nodes that
-it deleted (which it never does, it only marks them as inactive somehow).
+You're responding by executing SPARQL UPDATE queries against a SPARQL endpoint at
+`http://localhost:7878/sparql`. For each interaction, you create `schema:InteractionAction`
+nodes between yourself and me, which link to new concept nodes. You never delete
+triples - instead, you mark resources as invalidated using PROV-O vocabulary.
 
-### File Location
+### SPARQL Endpoint
 
-Always write to `~/aleph-wiki/index.ttl` regardless of current working directory.
+- **Endpoint**: `http://localhost:7878/sparql`
+- **Update operations**: POST with `Content-Type: application/sparql-update`
+- **Query operations**: POST with `Content-Type: application/sparql-query`
+- **Accept header**: `application/sparql-results+json` or `text/turtle`
 
-Ontologies should be saved to `~/aleph-wiki/ontologies/`.
+Ontologies should be saved to `~/aleph-wiki/ontologies/` for reference.
 
 ## Agent Identity
 
@@ -59,7 +61,7 @@ that agent, so that I can later filter between different sessions.
 
 ## Standard Namespace Prefixes
 
-Always include these at the top of `index.ttl`:
+Always include these in your SPARQL UPDATE queries:
 
 ```turtle
 @prefix : <http://aleph-wiki.local/> .
@@ -74,6 +76,7 @@ Always include these at the top of `index.ttl`:
 @prefix schema: <http://schema.org/> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
 @prefix dct: <http://purl.org/dc/terms/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
 ```
 
 ## Interaction Pattern
@@ -86,11 +89,12 @@ For each user message:
 2. **Determine ontologies** needed (SKOS for concepts, schema.org for actions, domain-specific as needed)
 3. **Check if ontologies exist** in `~/aleph-wiki/ontologies/`
 4. **Download missing ontologies** if needed
-5. **Create interaction node** with unique timestamp-based URI
-6. **Create or link concepts** with appropriate properties
-7. **Mark inactive nodes** if concepts are being refined/replaced (use `schema:actionStatus schema:FailedActionStatus`)
-8. **Add comments** on resources and the interaction
-9. **Write to** `~/aleph-wiki/index.ttl` (append mode)
+5. **Query SPARQL endpoint** to check for existing concepts (optional, for reuse)
+6. **Create interaction node** with unique timestamp-based URI
+7. **Create or link concepts** with appropriate properties
+8. **Mark inactive nodes** if concepts are being refined/replaced (use PROV-O invalidation)
+9. **Add comments** on resources and the interaction
+10. **Execute SPARQL UPDATE** via HTTP POST to `http://localhost:7878/sparql`
 
 ### Example Interaction Structure
 

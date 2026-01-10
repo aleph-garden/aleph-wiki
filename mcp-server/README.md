@@ -1,61 +1,68 @@
 # Aleph.wiki MCP Server
 
-Model Context Protocol (MCP) server for Solid Pod RDF operations with SPARQL pattern matching support.
+Model Context Protocol (MCP) server for Solid Pod RDF operations with SPARQL pattern matching and full query support.
 
 ## Features
 
 - **Solid Pod Integration**: Authenticate and interact with Solid Pods using the Solid Protocol
 - **RDF Operations**: Read, write, and append RDF triples in Turtle format
-- **SPARQL Pattern Matching**: Query RDF graphs with triple pattern matching
-- **Container Management**: List and navigate Solid Pod containers
-- **Authenticated Access**: OAuth/OIDC authentication with DPoP tokens
+- **SPARQL Pattern Matching**: Query RDF graphs with triple pattern matching (wildcards supported)
+- **Full SPARQL Queries**: Execute SELECT, CONSTRUCT, and ASK queries via Comunica
+- **Container Management**: List resources in Solid Pod containers
+- **Authenticated Access**: OAuth/OIDC authentication with session management
 
 ## Installation
 
 ```bash
-npm install
-npm run build
+# Install dependencies
+bun install
+
+# Build TypeScript
+bun run build
 ```
 
-## Usage with Claude Code
+## Development
+
+```bash
+# Run tests (requires Node.js via vitest due to Comunica compatibility)
+bun run test
+
+# Watch mode
+bun run test:watch
+
+# Run development server
+bun run dev
+```
+
+## Usage with Claude Desktop
 
 ### 1. Configure MCP Server
 
-Add to your Claude Code MCP configuration (typically `~/.config/claude-code/mcp.json`):
+Add to your Claude Desktop MCP configuration (typically `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
 ```json
 {
   "mcpServers": {
     "aleph-wiki-solid": {
       "command": "node",
-      "args": ["/path/to/aleph-wiki/mcp-server/dist/index.js"],
+      "args": ["/absolute/path/to/aleph-wiki/mcp-server/dist/index.js"],
       "env": {}
     }
   }
 }
 ```
 
-### 2. Initialize Solid Connection
+### 2. Build the Server
 
-In Claude Code, the agent can use:
-
-```
-Use the solid_init tool to connect to my Solid Pod at https://user.solidcommunity.net/
-```
-
-### 3. Read RDF Data
-
-```
-Use rdf_read to get the contents of https://user.solidcommunity.net/aleph-wiki/index.ttl
+```bash
+cd /path/to/aleph-wiki/mcp-server
+bun install
+bun run build
 ```
 
-### 4. Append Triples
+### 3. Restart Claude Desktop
 
-```
-Use rdf_append to add these triples to my knowledge graph:
-<concept:example> a skos:Concept ;
-    skos:prefLabel "Example Concept"@en .
-```
+The MCP server will be available as tools in Claude conversations.
 
 ## Available Tools
 
@@ -81,12 +88,12 @@ Initialize connection to Solid Pod with authentication.
 Read RDF resource from Solid Pod in Turtle format.
 
 **Parameters:**
-- `resourceUrl` (required): Full URL of the RDF resource
+- `url` (required): Full URL of the RDF resource
 
 **Example:**
 ```typescript
 {
-  "resourceUrl": "https://user.solidcommunity.net/aleph-wiki/index.ttl"
+  "url": "https://user.solidcommunity.net/aleph-wiki/index.ttl"
 }
 ```
 
@@ -94,13 +101,13 @@ Read RDF resource from Solid Pod in Turtle format.
 Append RDF triples to a resource using Solid Protocol PATCH.
 
 **Parameters:**
-- `resourceUrl` (required): Full URL of the RDF resource
+- `url` (required): Full URL of the RDF resource
 - `triples` (required): Turtle-formatted triples to append
 
 **Example:**
 ```typescript
 {
-  "resourceUrl": "https://user.solidcommunity.net/aleph-wiki/index.ttl",
+  "url": "https://user.solidcommunity.net/aleph-wiki/index.ttl",
   "triples": "<concept:test> a skos:Concept ; skos:prefLabel \"Test\"@en ."
 }
 ```
@@ -109,7 +116,7 @@ Append RDF triples to a resource using Solid Protocol PATCH.
 Execute simple triple pattern matching. Use null for wildcards.
 
 **Parameters:**
-- `resourceUrl` (required): RDF resource URL
+- `url` (required): RDF resource URL
 - `subject` (optional): Subject IRI or null for wildcard
 - `predicate` (optional): Predicate IRI or null for wildcard
 - `object` (optional): Object IRI/literal or null for wildcard
@@ -117,20 +124,25 @@ Execute simple triple pattern matching. Use null for wildcards.
 **Example - Find all concepts:**
 ```typescript
 {
-  "resourceUrl": "https://user.solidcommunity.net/aleph-wiki/index.ttl",
+  "url": "https://user.solidcommunity.net/aleph-wiki/index.ttl",
   "subject": null,
   "predicate": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
   "object": "http://www.w3.org/2004/02/skos/core#Concept"
 }
 ```
 
-**Example - Find all properties of a concept:**
+### `sparql_query`
+Execute full SPARQL query (SELECT, CONSTRUCT, ASK) against a resource.
+
+**Parameters:**
+- `url` (required): RDF resource URL
+- `query` (required): SPARQL query string
+
+**Example:**
 ```typescript
 {
-  "resourceUrl": "https://user.solidcommunity.net/aleph-wiki/index.ttl",
-  "subject": "http://aleph-wiki.local/concept/french-revolution",
-  "predicate": null,
-  "object": null
+  "url": "https://user.solidcommunity.net/aleph-wiki/index.ttl",
+  "query": "SELECT ?s ?label WHERE { ?s skos:prefLabel ?label } LIMIT 10"
 }
 ```
 
@@ -150,67 +162,77 @@ List resources in a Solid container.
 ## Architecture
 
 ```
-┌─────────────────┐
-│  Claude Code    │
-│  Agent          │
-└────────┬────────┘
-         │ MCP Protocol
-         │ (stdio)
-         ↓
-┌─────────────────┐
-│  MCP Server     │
-│  (This package) │
-└────────┬────────┘
-         │ Solid Protocol
-         │ (HTTPS + Auth)
-         ↓
-┌─────────────────┐
-│  Solid Pod      │
-│  RDF Storage    │
-└─────────────────┘
+src/
+├── index.ts              # Entry point & MCP server setup
+├── lib/
+│   ├── config.ts        # Configuration schema & types
+│   ├── solid-client.ts  # Solid Pod operations
+│   └── sparql.ts        # SPARQL query operations
+└── test/                # Test files (TDD)
 ```
 
-## Integration with Agent
+### Module Overview
 
-The `rdf-learning` agent skill can be updated to use these MCP tools instead of local filesystem operations:
+- **config.ts**: Configuration validation with Zod
+- **solid-client.ts**: Session management, RDF read/write, container operations
+- **sparql.ts**: Pattern matching and full SPARQL queries via Comunica
+- **index.ts**: MCP tool registration and server initialization
 
-```markdown
-### File Location (MCP Mode)
+## Testing
 
-When MCP server is configured:
-
-1. **Initialize** Solid connection: `solid_init`
-2. **Read** existing graph: `rdf_read`
-3. **Query** concepts: `sparql_match`
-4. **Append** new triples: `rdf_append`
-```
-
-## Development
+All features are implemented using TDD with comprehensive test coverage:
 
 ```bash
-# Install dependencies
-npm install
+# Run all tests
+bun run test
 
-# Development mode with auto-reload
-npm run dev
+# Run specific test file
+bun run test sparql-match.test.ts
 
-# Build for production
-npm run build
-
-# Run built server
-npm start
+# Coverage report
+bun run test:coverage
 ```
 
-## Future Enhancements
+**Note**: Tests use Node.js via vitest (not Bun directly) due to Comunica's dependency on Node.js-specific APIs.
 
-- [ ] Full SPARQL 1.1 query support (via Comunica)
-- [ ] SPARQL UPDATE support
-- [ ] Batch operations for multiple resources
+## TODOs
+
+### High Priority
+
+- [ ] **Public Semantic Web Browsing**: Allow querying random RDF documents and SPARQL endpoints without Solid authentication
+  - Add `rdf_fetch` tool for public RDF resources (no auth required)
+  - Add `sparql_endpoint` tool for querying public SPARQL endpoints (DBpedia, Wikidata, etc.)
+  - Enable AI to browse the semantic web: follow `rdfs:seeAlso` links, explore ontologies, discover linked data
+  - Support content negotiation (Turtle, RDF/XML, JSON-LD, N-Triples)
+
+- [ ] Resource creation: `PUT` method to create new resources
+- [ ] Resource deletion: `DELETE` method to remove resources
+- [ ] Container creation: Create new containers in Pods
+- [ ] Access control management: Read/write ACL policies
+
+### Medium Priority
+
+- [ ] SPARQL UPDATE support: Full update operations beyond INSERT DATA
+- [ ] Batch operations: Multiple resources in a single request
+- [ ] Better error messages with context and recovery suggestions
+- [ ] Streaming support for large query results
+- [ ] Query result caching with invalidation
+
+### Low Priority
+
 - [ ] WebSocket notifications for real-time updates
-- [ ] Access control management tools
-- [ ] Container creation and deletion
-- [ ] Resource metadata queries
-- [ ] Support for other RDF formats (JSON-LD, RDF/XML)
+- [ ] Support for additional RDF formats (JSON-LD, RDF/XML, N-Triples)
+- [ ] Query optimization hints
+- [ ] Resource metadata queries (size, modified date, content type)
+- [ ] Federated queries across multiple Pods
+
+### Research
+
+- [ ] Explore WAC (Web Access Control) integration
+- [ ] Investigate ACP (Access Control Policy) support
+- [ ] Consider SPARQL 1.1 Federation support
+- [ ] Evaluate performance with large datasets
+- [ ] Research offline/local-first capabilities
 
 ## Security Considerations
 
@@ -219,10 +241,16 @@ npm start
 - Implement proper token refresh mechanisms
 - Validate all user inputs before sending to Pod
 - Follow Solid security best practices
+- Be cautious with public SPARQL endpoints (rate limiting, timeouts)
 
 ## References
 
 - [Model Context Protocol](https://modelcontextprotocol.io)
 - [Solid Protocol Specification](https://solidproject.org/TR/protocol)
 - [Inrupt JavaScript Client Libraries](https://docs.inrupt.com/developer-tools/javascript/client-libraries/)
+- [Comunica SPARQL Engine](https://comunica.dev/)
 - [N3.js Documentation](https://github.com/rdfjs/N3.js)
+
+## License
+
+AGPL-3.0 - see [LICENSE](../LICENSE) for details.

@@ -531,10 +531,16 @@ body {
 }
 
 .node text {
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 600;
   fill: #fff;
   pointer-events: none;
   text-anchor: middle;
+  paint-order: stroke;
+  stroke: #1a1a1a;
+  stroke-width: 3px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .type-tags {
@@ -572,6 +578,7 @@ body {
   }
   .node text {
     fill: #333;
+    stroke: #ffffff;
   }
   .link-label {
     fill: #666;

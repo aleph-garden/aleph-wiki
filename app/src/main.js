@@ -1225,7 +1225,7 @@ INSERT DATA {
     nodeEnter.append('text')
       .attr('dy', 30)
       .text(d => d.label)
-      .style('opacity', 0);
+      .style('opacity', 1);
 
     const nodeMerge = nodeEnter.merge(node);
 

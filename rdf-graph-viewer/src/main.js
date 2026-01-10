@@ -15,7 +15,7 @@ class RDFGraphViewer {
 
     // Settings
     this.settings = {
-      rdfFilePath: '/index.rdf',
+      rdfFilePath: '/aleph-wiki.ttl',
       nodeSize: 20,
       linkDistance: 150,
       chargeStrength: -400,

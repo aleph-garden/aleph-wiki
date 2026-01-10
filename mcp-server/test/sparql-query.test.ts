@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { registerTools, setSolidSession } from '../src/index.js';
+import { registerTools, setSolidSession, setConfig } from '../src/index.js';
 import { createMockSession, mockFetchResponse, sampleTurtleData } from './mocks.js';
 
 /**
@@ -47,9 +47,10 @@ describe('sparql_query MCP tool', () => {
     // Register tools
     registerTools(server);
 
-    // Create mock session
+    // Create mock session and clear config
     mockSession = createMockSession();
     setSolidSession(mockSession as any);
+    setConfig(null); // Clear any config from previous tests
   });
 
   describe('tool registration', () => {

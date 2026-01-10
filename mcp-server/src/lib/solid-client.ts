@@ -16,12 +16,30 @@ export function setSolidSession(session: Session | null) {
 }
 
 /**
+ * Set the global configuration (primarily for testing)
+ *
+ * @param cfg - The configuration to set, or null to clear
+ */
+export function setConfig(cfg: Config | null) {
+  config = cfg;
+}
+
+/**
  * Get the current Solid session
  *
  * @returns The current Solid session, or null if not initialized
  */
 export function getSolidSession(): Session | null {
   return solidSession;
+}
+
+/**
+ * Get the current configuration
+ *
+ * @returns The current configuration, or null if not initialized
+ */
+export function getConfig(): Config | null {
+  return config;
 }
 
 /**

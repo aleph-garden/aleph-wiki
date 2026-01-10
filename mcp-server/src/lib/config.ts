@@ -9,6 +9,7 @@ export const ConfigSchema = z.object({
   clientId: z.string().optional(),
   clientSecret: z.string().optional(),
   oidcIssuer: z.string().url().default('https://solidcommunity.net'),
+  sparqlEndpoint: z.string().url().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

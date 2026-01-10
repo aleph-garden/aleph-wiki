@@ -1,6 +1,6 @@
 import { Parser, Store } from 'n3';
 import { QueryEngine } from '@comunica/query-sparql';
-import { getSolidSession, readRdfResource } from './solid-client.js';
+import { getSolidSession, readRdfResource, getConfig } from './solid-client.js';
 
 // Create a singleton QueryEngine instance
 let queryEngine: QueryEngine | null = null;
@@ -73,6 +73,20 @@ export async function sparqlMatch(
 }
 
 /**
+ * Get configured SPARQL endpoint if available
+ *
+ * Returns the SPARQL endpoint URL from the configuration if one was provided
+ * during solid_init. This allows users with CSS+Oxigraph or similar setups
+ * to use optimized direct SPARQL queries instead of Comunica over HTTP.
+ *
+ * @returns The SPARQL endpoint URL if configured, null otherwise
+ */
+function getConfiguredSparqlEndpoint(): string | null {
+  const config = getConfig();
+  return config?.sparqlEndpoint ?? null;
+}
+
+/**
  * Execute a full SPARQL query using Comunica QueryEngine
  *
  * Supports SELECT, CONSTRUCT, and ASK query types with automatic result formatting:
@@ -107,6 +121,24 @@ export async function executeSparqlQuery(url: string, query: string): Promise<st
     throw new Error('Solid session not initialized');
   }
 
+  // Check if user configured a SPARQL endpoint
+  const endpoint = getConfiguredSparqlEndpoint();
+
+  if (endpoint) {
+    // Use dedicated SPARQL endpoint (fast path for any configured endpoint)
+    const response = await session.fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/sparql-query',
+        'Accept': 'application/sparql-results+json',
+      },
+      body: query,
+    });
+
+    return await response.text();
+  }
+
+  // Fall back to Comunica
   const engine = getQueryEngine();
 
   // Execute query with authenticated fetch

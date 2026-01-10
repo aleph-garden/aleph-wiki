@@ -12,6 +12,7 @@ export const SolidInitInputSchema = ConfigSchema.pick({
   clientId: true,
   clientSecret: true,
   oidcIssuer: true,
+  sparqlEndpoint: true,
 });
 
 export type SolidInitInput = z.infer<typeof SolidInitInputSchema>;
@@ -21,7 +22,7 @@ export type SolidInitInput = z.infer<typeof SolidInitInputSchema>;
  */
 export const solidInitTool = {
   name: 'solid_init',
-  description: 'Initialize Solid Pod session with authentication',
+  description: 'Initialize Solid Pod session with authentication. Optionally configure a SPARQL endpoint for optimized queries.',
   inputSchema: zodToJsonSchema(SolidInitInputSchema),
 };
 

@@ -6,6 +6,7 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprot
 import { Config } from "./lib/config.js";
 import {
   setSolidSession,
+  setConfig,
   initializeSolidSession,
   readRdfResource,
   appendTriples,
@@ -41,6 +42,7 @@ import {
 export type { Config };
 export {
   setSolidSession,
+  setConfig,
   initializeSolidSession,
   readRdfResource,
   appendTriples,

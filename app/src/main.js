@@ -3,6 +3,8 @@ import * as d3 from 'd3';
 
 class RDFGraphViewer {
   constructor() {
+    console.log('RDF Graph Viewer initializing...');
+
     this.sessions = []; // Array of {sessionUri, startTime, interactions: []}
     this.states = []; // Flattened array of states for rendering
     this.currentStateIndex = 0;
@@ -20,6 +22,7 @@ class RDFGraphViewer {
       linkDistance: 150,
       chargeStrength: -400,
       typeDisplay: 'on', // 'on' = tags, 'nodes' = show as nodes, 'off' = hide
+      rawMode: false, // Show all nodes regardless of timestamp
       debugMode: true
     };
 
@@ -85,6 +88,7 @@ class RDFGraphViewer {
     this.chargeStrengthInput = document.getElementById('charge-strength');
     this.chargeStrengthValue = document.getElementById('charge-strength-value');
     this.typeDisplayInputs = document.querySelectorAll('input[name="type-display"]');
+    this.rawModeInput = document.getElementById('raw-mode');
 
     // Open settings
     this.settingsBtn.addEventListener('click', () => {
@@ -150,6 +154,19 @@ class RDFGraphViewer {
         }
       });
     });
+
+    // Raw mode
+    if (this.rawModeInput) {
+      this.rawModeInput.addEventListener('change', (e) => {
+        this.settings.rawMode = e.target.checked;
+        console.log('Raw mode:', this.settings.rawMode ? 'enabled' : 'disabled');
+
+        // Reload data to regenerate states with new mode
+        this.loadFromSparql();
+      });
+    } else {
+      console.error('Raw mode checkbox not found in DOM');
+    }
   }
 
   applySettings() {
@@ -394,7 +411,53 @@ INSERT DATA {
     try {
       console.log('Loading from SPARQL endpoint:', this.settings.sparqlEndpoint);
 
-      // Query for sessions and interactions
+      // Raw mode: query ALL triples without any session/interaction constraints
+      if (this.settings.rawMode) {
+        console.log('Raw mode: querying all triples without filters');
+
+        const rawQuery = `
+          SELECT ?s ?p ?o
+          WHERE {
+            ?s ?p ?o .
+          }
+        `;
+
+        const rawData = await this.executeSparqlQuery(rawQuery);
+
+        console.log(`Raw mode: fetched ${rawData.length} triples from endpoint`);
+
+        if (rawData.length === 0) {
+          console.warn('Raw mode: No triples found in database. Try loading sample data from the settings panel.');
+          alert('No data found in the database. Click "Load Sample Data" in the settings panel to add example data.');
+          return;
+        }
+
+        // Create a dummy session/interaction structure for raw mode
+        this.sessions = [{
+          uri: 'raw-mode-session',
+          startTime: new Date().toISOString(),
+          interactions: [{
+            uri: 'raw-mode-interaction',
+            startTime: new Date().toISOString(),
+            session: 'raw-mode-session'
+          }]
+        }];
+
+        // Convert to the expected format with dummy timestamps
+        // rawData already has the structure { s: {...}, p: {...}, o: {...} }
+        const allTriples = rawData.map(row => ({
+          s: row.s,
+          p: row.p,
+          o: row.o,
+          interaction: { value: 'raw-mode-interaction' },
+          interactionTime: { value: new Date().toISOString() }
+        }));
+
+        this.generateStatesFromTriples(allTriples);
+        return;
+      }
+
+      // Normal mode: Query for sessions and interactions
       const sessionsQuery = `
         PREFIX schema: <http://schema.org/>
         PREFIX session: <http://aleph-wiki.local/session/>
@@ -621,31 +684,48 @@ INSERT DATA {
       return;
     }
 
-    // Build states based on interaction timestamps
-    this.sessions.forEach((session, sessionIndex) => {
-      session.interactions.forEach((interaction, interactionIndex) => {
-        const currentTimestamp = interaction.startTime;
+    // Raw mode: create a single state with all nodes
+    if (this.settings.rawMode) {
+      const graphData = this.triplesToGraphFromSparql(allContentTriples);
 
-        // Filter triples to only include those from interactions at or before current time
-        const triplesToShow = allContentTriples.filter(triple =>
-          triple.interactionTime <= currentTimestamp
-        );
+      console.log(`Raw mode: Single state with all ${allContentTriples.length} triples, ${graphData.nodes.length} nodes, ${graphData.links.length} links`);
 
-        const graphData = this.triplesToGraphFromSparql(triplesToShow);
+      newStates.push({
+        ...graphData,
+        sessionIndex: 0,
+        interactionIndex: 0,
+        sessionUri: this.sessions[0]?.uri || '',
+        interactionUri: 'raw-mode',
+        timestamp: new Date().toISOString(),
+        tripleCount: allContentTriples.length
+      });
+    } else {
+      // Normal mode: Build states based on interaction timestamps
+      this.sessions.forEach((session, sessionIndex) => {
+        session.interactions.forEach((interaction, interactionIndex) => {
+          const currentTimestamp = interaction.startTime;
 
-        console.log(`State ${newStates.length}: Session ${sessionIndex}, Interaction ${interactionIndex}: ${triplesToShow.length} triples, ${graphData.nodes.length} nodes, ${graphData.links.length} links`);
+          // Filter triples to only include those from interactions at or before current time
+          const triplesToShow = allContentTriples.filter(triple =>
+            triple.interactionTime <= currentTimestamp
+          );
 
-        newStates.push({
-          ...graphData,
-          sessionIndex,
-          interactionIndex,
-          sessionUri: session.uri,
-          interactionUri: interaction.uri,
-          timestamp: interaction.startTime,
-          tripleCount: triplesToShow.length
+          const graphData = this.triplesToGraphFromSparql(triplesToShow);
+
+          console.log(`State ${newStates.length}: Session ${sessionIndex}, Interaction ${interactionIndex}: ${triplesToShow.length} triples, ${graphData.nodes.length} nodes, ${graphData.links.length} links`);
+
+          newStates.push({
+            ...graphData,
+            sessionIndex,
+            interactionIndex,
+            sessionUri: session.uri,
+            interactionUri: interaction.uri,
+            timestamp: interaction.startTime,
+            tripleCount: triplesToShow.length
+          });
         });
       });
-    });
+    }
 
     this.states = newStates;
     console.log('Generated', this.states.length, 'states from sessions');
@@ -662,6 +742,11 @@ INSERT DATA {
     this.sessionTimeline.innerHTML = '';
 
     if (this.sessions.length === 0) return;
+
+    // Hide timeline in raw mode
+    if (this.settings.rawMode) {
+      return;
+    }
 
     let stateIndex = 0;
 
@@ -1225,7 +1310,10 @@ INSERT DATA {
   }
 
   updateTimelineInfo() {
-    if (this.states.length > 0 && this.states[this.currentStateIndex]) {
+    if (this.settings.rawMode) {
+      this.currentSessionSpan.textContent = 'RAW MODE';
+      this.currentInteractionSpan.textContent = `All nodes displayed (${this.states[0]?.nodes?.length || 0} nodes)`;
+    } else if (this.states.length > 0 && this.states[this.currentStateIndex]) {
       const state = this.states[this.currentStateIndex];
       const sessionUri = this.shortenURI(state.sessionUri);
       const interactionUri = this.shortenURI(state.interactionUri);

@@ -26,7 +26,8 @@
     "@inrupt/solid-client-authn-node": "^2.0.1",
     "@modelcontextprotocol/sdk": "^1.0.6",
     "n3": "^1.17.2",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "zod-to-json-schema": "^3.25.1"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",

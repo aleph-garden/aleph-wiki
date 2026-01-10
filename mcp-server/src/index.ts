@@ -12,6 +12,20 @@ import {
   listContainer,
 } from "./lib/solid-client.js";
 import { sparqlMatch, executeSparqlQuery } from "./lib/sparql.js";
+import {
+  solidInitTool,
+  handleSolidInit,
+  rdfReadTool,
+  handleRdfRead,
+  rdfAppendTool,
+  handleRdfAppend,
+  sparqlMatchTool,
+  handleSparqlMatch,
+  sparqlQueryTool,
+  handleSparqlQuery,
+  solidListTool,
+  handleSolidList,
+} from "./lib/tools/index.js";
 
 /**
  * MCP Server for Solid Pod RDF Operations
@@ -49,218 +63,41 @@ export {
  * @param server - The MCP Server instance to register tools on
  */
 export function registerTools(server: Server) {
+  // Collect all tool definitions from tool modules
   const tools = [
-    {
-      name: "solid_init",
-      description: "Initialize Solid Pod session with authentication",
-      inputSchema: {
-        type: "object",
-        properties: {
-          podUrl: {
-            type: "string",
-            description: "URL of the Solid Pod",
-          },
-          webId: {
-            type: "string",
-            description: "WebID of the user",
-          },
-        },
-        required: ["podUrl", "webId"],
-      },
-    },
-    {
-      name: "rdf_read",
-      description: "Read RDF resource from a Solid Pod URL",
-      inputSchema: {
-        type: "object",
-        properties: {
-          url: {
-            type: "string",
-            description: "URL of the RDF resource to read",
-          },
-        },
-        required: ["url"],
-      },
-    },
-    {
-      name: "rdf_append",
-      description: "Append RDF triples to a Solid Pod resource using SPARQL UPDATE",
-      inputSchema: {
-        type: "object",
-        properties: {
-          url: {
-            type: "string",
-            description: "URL of the RDF resource to append to",
-          },
-          triples: {
-            type: "string",
-            description: "RDF triples to append in Turtle format",
-          },
-        },
-        required: ["url", "triples"],
-      },
-    },
-    {
-      name: "sparql_match",
-      description: "Match RDF triples using pattern matching with wildcards",
-      inputSchema: {
-        type: "object",
-        properties: {
-          url: {
-            type: "string",
-            description: "URL of the RDF resource to query",
-          },
-          subject: {
-            type: "string",
-            description: "Subject URI to match (optional, null for wildcard)",
-          },
-          predicate: {
-            type: "string",
-            description: "Predicate URI to match (optional, null for wildcard)",
-          },
-          object: {
-            type: "string",
-            description: "Object URI or literal to match (optional, null for wildcard)",
-          },
-        },
-        required: ["url"],
-      },
-    },
-    {
-      name: "sparql_query",
-      description: "Execute SPARQL query against a Solid Pod resource using Comunica",
-      inputSchema: {
-        type: "object",
-        properties: {
-          url: {
-            type: "string",
-            description: "URL of the RDF resource to query",
-          },
-          query: {
-            type: "string",
-            description: "SPARQL query to execute (SELECT, CONSTRUCT, or ASK)",
-          },
-        },
-        required: ["url", "query"],
-      },
-    },
-    {
-      name: "solid_list",
-      description: "List resources in a Solid container",
-      inputSchema: {
-        type: "object",
-        properties: {
-          containerUrl: {
-            type: "string",
-            description: "URL of the container to list (must end with /)",
-          },
-        },
-        required: ["containerUrl"],
-      },
-    },
+    solidInitTool,
+    rdfReadTool,
+    rdfAppendTool,
+    sparqlMatchTool,
+    sparqlQueryTool,
+    solidListTool,
   ];
 
-  server.setRequestHandler(
-    ListToolsRequestSchema,
-    async () => ({ tools })
-  );
+  // Register ListToolsRequestSchema handler
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 
-  server.setRequestHandler(
-    CallToolRequestSchema,
-    async (request) => {
-      if (request.params.name === "solid_init") {
-        const { podUrl, webId } = request.params.arguments as any;
-        await initializeSolidSession({ podUrl, webId });
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Initialized Solid session for ${webId} at ${podUrl}`,
-            },
-          ],
-        };
-      }
+  // Register CallToolRequestSchema handler with tool dispatch
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const toolName = request.params.name;
+    const args = request.params.arguments;
 
-      if (request.params.name === "rdf_read") {
-        const { url } = request.params.arguments as any;
-        const rdfContent = await readRdfResource(url);
-        return {
-          content: [
-            {
-              type: "text",
-              text: rdfContent,
-            },
-          ],
-        };
-      }
-
-      if (request.params.name === "rdf_append") {
-        const { url, triples } = request.params.arguments as any;
-        await appendTriples(url, triples);
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Successfully appended triples to ${url}`,
-            },
-          ],
-        };
-      }
-
-      if (request.params.name === "sparql_match") {
-        const { url, subject, predicate, object } = request.params.arguments as any;
-        const matches = await sparqlMatch(url, subject, predicate, object);
-
-        if (matches.length === 0) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "No matches found (0 triples)",
-              },
-            ],
-          };
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(matches, null, 2),
-            },
-          ],
-        };
-      }
-
-      if (request.params.name === "sparql_query") {
-        const { url, query } = request.params.arguments as any;
-        const result = await executeSparqlQuery(url, query);
-        return {
-          content: [
-            {
-              type: "text",
-              text: result,
-            },
-          ],
-        };
-      }
-
-      if (request.params.name === "solid_list") {
-        const { containerUrl } = request.params.arguments as any;
-        const resources = await listContainer(containerUrl);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(resources),
-            },
-          ],
-        };
-      }
-
-      throw new Error(`Unknown tool: ${request.params.name}`);
+    switch (toolName) {
+      case 'solid_init':
+        return handleSolidInit(args as any);
+      case 'rdf_read':
+        return handleRdfRead(args as any);
+      case 'rdf_append':
+        return handleRdfAppend(args as any);
+      case 'sparql_match':
+        return handleSparqlMatch(args as any);
+      case 'sparql_query':
+        return handleSparqlQuery(args as any);
+      case 'solid_list':
+        return handleSolidList(args as any);
+      default:
+        throw new Error(`Unknown tool: ${toolName}`);
     }
-  );
+  });
 }
 
 /**

@@ -62,8 +62,8 @@ describe('sparql_match MCP tool', () => {
     const sparqlMatchTool = listResponse.tools.find((t: any) => t.name === 'sparql_match');
 
     expect(sparqlMatchTool.inputSchema.properties).toHaveProperty('subject');
-    expect(sparqlMatchTool.inputSchema.properties.subject.type).toBe('string');
-    // subject is optional (for wildcards)
+    expect(sparqlMatchTool.inputSchema.properties.subject.type).toEqual(['string', 'null']);
+    // subject is optional and nullable (for wildcards)
   });
 
   it('has proper schema with predicate parameter', async () => {
@@ -71,8 +71,8 @@ describe('sparql_match MCP tool', () => {
     const sparqlMatchTool = listResponse.tools.find((t: any) => t.name === 'sparql_match');
 
     expect(sparqlMatchTool.inputSchema.properties).toHaveProperty('predicate');
-    expect(sparqlMatchTool.inputSchema.properties.predicate.type).toBe('string');
-    // predicate is optional (for wildcards)
+    expect(sparqlMatchTool.inputSchema.properties.predicate.type).toEqual(['string', 'null']);
+    // predicate is optional and nullable (for wildcards)
   });
 
   it('has proper schema with object parameter', async () => {
@@ -80,8 +80,8 @@ describe('sparql_match MCP tool', () => {
     const sparqlMatchTool = listResponse.tools.find((t: any) => t.name === 'sparql_match');
 
     expect(sparqlMatchTool.inputSchema.properties).toHaveProperty('object');
-    expect(sparqlMatchTool.inputSchema.properties.object.type).toBe('string');
-    // object is optional (for wildcards)
+    expect(sparqlMatchTool.inputSchema.properties.object.type).toEqual(['string', 'null']);
+    // object is optional and nullable (for wildcards)
   });
 
   it('matches all triples by type (find all SKOS Concepts)', async () => {
@@ -146,6 +146,8 @@ describe('sparql_match MCP tool', () => {
     expect(responseText).toContain('prefLabel');
     expect(responseText).toContain('Test Concept');
     expect(responseText).toContain('definition');
+    expect(responseText).toContain('skos/core#Concept');
+    expect(responseText).toContain('dateCreated');
   });
 
   it('matches triples with predicate wildcard (find all skos:related connections)', async () => {

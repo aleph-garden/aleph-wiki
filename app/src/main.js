@@ -33,10 +33,16 @@ class RDFGraphViewer {
 
     this.svg.attr('width', this.width).attr('height', this.height);
 
-    // Create groups for links and nodes
-    this.linkGroup = this.svg.append('g').attr('class', 'links');
-    this.nodeGroup = this.svg.append('g').attr('class', 'nodes');
-    this.linkLabelGroup = this.svg.append('g').attr('class', 'link-labels');
+    // Create a container group for zoom/pan
+    this.container = this.svg.append('g').attr('class', 'zoom-container');
+
+    // Create groups for links and nodes inside the container
+    this.linkGroup = this.container.append('g').attr('class', 'links');
+    this.nodeGroup = this.container.append('g').attr('class', 'nodes');
+    this.linkLabelGroup = this.container.append('g').attr('class', 'link-labels');
+
+    // Setup zoom behavior
+    this.setupZoom();
 
     // Setup timeline controls
     this.setupTimeline();
@@ -72,6 +78,26 @@ class RDFGraphViewer {
           console.log('Help not yet implemented');
           break;
       }
+    });
+  }
+
+  setupZoom() {
+    // Create zoom behavior
+    this.zoom = d3.zoom()
+      .scaleExtent([0.1, 10]) // Allow zoom from 10% to 1000%
+      .on('zoom', (event) => {
+        // Apply the transform to the container group
+        this.container.attr('transform', event.transform);
+      });
+
+    // Apply zoom to the SVG
+    this.svg.call(this.zoom);
+
+    // Double-click to reset zoom
+    this.svg.on('dblclick.zoom', () => {
+      this.svg.transition()
+        .duration(750)
+        .call(this.zoom.transform, d3.zoomIdentity);
     });
   }
 
@@ -1507,6 +1533,8 @@ INSERT DATA {
   }
 
   nodeDoubleClicked(event, d) {
+    // Prevent zoom reset when double-clicking nodes
+    event.stopPropagation();
     // Double-click to unpin a node and let it move freely
     d.fx = null;
     d.fy = null;

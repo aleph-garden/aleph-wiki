@@ -257,11 +257,14 @@ INSERT DATA {
     schema:agent session:demo-session-2 ;
     schema:startTime "2026-01-10T13:05:00Z"^^xsd:dateTime .
 
-  # Content for Session 1 - Database concepts
+  # Content for Session 1, Interaction 1 - Initial database concepts
   concept:GraphDB a concept:Technology ;
     rdfs:label "Graph Database" ;
     rdfs:comment "A database that uses graph structures for queries" .
 
+  interaction:demo-1-1 schema:result concept:GraphDB .
+
+  # Content for Session 1, Interaction 2 - Extended database concepts
   concept:SPARQL a concept:Language ;
     rdfs:label "SPARQL" ;
     rdfs:comment "RDF query language" ;
@@ -272,16 +275,17 @@ INSERT DATA {
     rdfs:comment "Resource Description Framework" ;
     schema:relatedTo concept:SPARQL .
 
-  # Link Session 1 concepts to the session
-  session:demo-session-1 schema:result concept:GraphDB .
-  session:demo-session-1 schema:result concept:SPARQL .
-  session:demo-session-1 schema:result concept:RDF .
+  interaction:demo-1-2 schema:result concept:SPARQL .
+  interaction:demo-1-2 schema:result concept:RDF .
 
-  # Content for Session 2 - Programming concepts
+  # Content for Session 2, Interaction 1 - Initial programming concepts
   concept:Python a concept:Language ;
     rdfs:label "Python" ;
     rdfs:comment "High-level programming language" .
 
+  interaction:demo-2-1 schema:result concept:Python .
+
+  # Content for Session 2, Interaction 2 - Web development concepts
   concept:JavaScript a concept:Language ;
     rdfs:label "JavaScript" ;
     rdfs:comment "Scripting language for web development" .
@@ -291,10 +295,8 @@ INSERT DATA {
     rdfs:comment "JavaScript library for building user interfaces" ;
     schema:relatedTo concept:JavaScript .
 
-  # Link Session 2 concepts to the session
-  session:demo-session-2 schema:result concept:Python .
-  session:demo-session-2 schema:result concept:JavaScript .
-  session:demo-session-2 schema:result concept:React .
+  interaction:demo-2-2 schema:result concept:JavaScript .
+  interaction:demo-2-2 schema:result concept:React .
 }
 `;
 
@@ -417,31 +419,30 @@ INSERT DATA {
       const sessionsData = await this.executeSparqlQuery(sessionsQuery);
       await this.extractSessionsAndInteractions(sessionsData);
 
-      // Query for session results (which nodes belong to which session)
-      const sessionResultsQuery = `
+      // Query for interaction results (which nodes belong to which interaction)
+      const interactionResultsQuery = `
         PREFIX schema: <http://schema.org/>
-        SELECT ?session ?result
+        SELECT ?interaction ?session ?result
         WHERE {
-          ?session schema:result ?result .
+          ?interaction schema:result ?result ;
+                      schema:agent ?session .
         }
       `;
 
-      const sessionResultsData = await this.executeSparqlQuery(sessionResultsQuery);
-      this.extractSessionResults(sessionResultsData);
+      const interactionResultsData = await this.executeSparqlQuery(interactionResultsQuery);
+      this.extractInteractionResults(interactionResultsData);
 
-      // Query for all triples (content)
+      // Query for all content triples with their associated interaction timestamps
       const triplesQuery = `
         PREFIX schema: <http://schema.org/>
-        SELECT ?s ?p ?o
+        SELECT ?s ?p ?o ?interaction ?interactionTime
         WHERE {
           ?s ?p ?o .
-          FILTER(
-            !CONTAINS(STR(?s), "session:") &&
-            !CONTAINS(STR(?s), "interaction:") &&
-            !CONTAINS(STR(?s), "agent:") &&
-            ?p != schema:result
-          )
+          ?interaction schema:result ?s ;
+                      schema:startTime ?interactionTime .
+          FILTER(?p != schema:result)
         }
+        ORDER BY ?interactionTime
       `;
 
       const triplesData = await this.executeSparqlQuery(triplesQuery);
@@ -532,14 +533,15 @@ INSERT DATA {
     console.log('Extracted sessions:', this.sessions);
   }
 
-  extractSessionResults(results) {
+  extractInteractionResults(results) {
     // Build mapping of session URI to session index
     const sessionUriToIndex = new Map();
     this.sessions.forEach((session, index) => {
       sessionUriToIndex.set(session.uri, index);
     });
 
-    // Extract node-to-session mappings from schema:result relationships
+    // Extract node-to-session mappings from interaction results
+    // (nodes belong to the session of the interaction that created them)
     results.forEach(row => {
       const sessionUri = row.session.value;
       const resultNode = this.shortenURI(row.result.value);
@@ -550,18 +552,20 @@ INSERT DATA {
       }
     });
 
-    console.log('Extracted session results:', this.nodeToSession);
+    console.log('Extracted interaction results and session mappings:', this.nodeToSession);
   }
 
   generateStatesFromTriples(sparqlTriples) {
     const newStates = [];
 
-    // Convert SPARQL results to internal triple format
+    // Convert SPARQL results to internal triple format with timestamps
     const allContentTriples = sparqlTriples.map(row => ({
       subject: row.s.value,
       predicate: row.p.value,
       object: row.o.value,
-      objectType: row.o.type
+      objectType: row.o.type,
+      interactionUri: row.interaction.value,
+      interactionTime: row.interactionTime.value
     }));
 
     console.log('Total content triples:', allContentTriples.length);
@@ -572,29 +576,15 @@ INSERT DATA {
       return;
     }
 
-    // Divide content equally among sessions
-    const triplesPerSession = Math.floor(allContentTriples.length / this.sessions.length);
-
+    // Build states based on interaction timestamps
     this.sessions.forEach((session, sessionIndex) => {
-      // Calculate which triples belong to this session
-      const sessionStartTriple = sessionIndex * triplesPerSession;
-      const sessionEndTriple = sessionIndex === this.sessions.length - 1
-        ? allContentTriples.length
-        : (sessionIndex + 1) * triplesPerSession;
-      const sessionTriples = allContentTriples.slice(sessionStartTriple, sessionEndTriple);
-
       session.interactions.forEach((interaction, interactionIndex) => {
-        // Progressively show more triples within this session
-        const triplesPerInteraction = Math.ceil(sessionTriples.length / session.interactions.length);
-        const interactionEndIndex = Math.min(
-          (interactionIndex + 1) * triplesPerInteraction,
-          sessionTriples.length
-        );
+        const currentTimestamp = interaction.startTime;
 
-        // Accumulate all previous sessions' content plus current session's progress
-        const allPreviousContent = allContentTriples.slice(0, sessionStartTriple);
-        const currentSessionContent = sessionTriples.slice(0, interactionEndIndex);
-        const triplesToShow = [...allPreviousContent, ...currentSessionContent];
+        // Filter triples to only include those from interactions at or before current time
+        const triplesToShow = allContentTriples.filter(triple =>
+          triple.interactionTime <= currentTimestamp
+        );
 
         const graphData = this.triplesToGraphFromSparql(triplesToShow);
 

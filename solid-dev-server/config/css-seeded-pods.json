@@ -6,6 +6,7 @@
       {
         "name": "dev"
       }
-    ]
+    ],
+    "register": true
   }
 ]

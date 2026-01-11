@@ -38,7 +38,8 @@ To seed multiple accounts with their pods, modify `config/css-seeded-pods.json`:
       {
         "name": "dev"
       }
-    ]
+    ],
+    "register": true
   },
   {
     "email": "alice@localhost",
@@ -47,10 +48,13 @@ To seed multiple accounts with their pods, modify `config/css-seeded-pods.json`:
       {
         "name": "alice"
       }
-    ]
+    ],
+    "register": true
   }
 ]
 ```
+
+**Important**: The `"register": true` field ensures the WebID is properly registered with the Identity Provider and includes the necessary `solid:oidcIssuer` triple for authentication to work correctly.
 
 You can create multiple pods for a single account:
 

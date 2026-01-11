@@ -2,15 +2,60 @@
 
 ## Quick Start
 
+### Using devenv (Recommended)
+
 ```bash
-# Terminal 1: Start CSS server
-cd ../app
-bun run solid
+# Terminal 1: Start all services from repository root
+nix develop
+devenv up
 
 # Terminal 2: Run E2E tests
-cd ../mcp-server
+cd mcp-server
 bun test:e2e
 ```
+
+### Manual Start
+
+```bash
+# Terminal 1: Start Oxigraph
+cd solid-dev-server
+bun run oxigraph
+
+# Terminal 2: Start CSS server
+cd solid-dev-server
+bun run solid
+
+# Terminal 3: Run E2E tests
+cd mcp-server
+bun test:e2e
+```
+
+## Important: First-Time Setup
+
+When running CSS with SPARQL backend (Oxigraph) for the first time, you need to:
+
+1. **Clear any existing data** to ensure the seeded pod is properly initialized:
+   ```bash
+   # Stop CSS and Oxigraph if running (Ctrl+C)
+   # From repository root:
+   reset-data  # If using devenv
+   # Or manually:
+   rm -rf solid-dev-server/data/.oxigraph-data
+   rm -rf solid-dev-server/data/.solid-data
+   ```
+
+2. **Start services** (using devenv or manually as shown above)
+
+   The first startup will:
+   - Create the seeded pod for `dev@localhost`
+   - Register the WebID with the Identity Provider
+   - Set up the `solid:oidcIssuer` triple for authentication
+
+3. **Run the tests**:
+   ```bash
+   cd mcp-server
+   bun test:e2e
+   ```
 
 ## What the E2E Tests Do
 
@@ -53,7 +98,9 @@ bun test:e2e
 
 ### "Connection refused" errors
 **Problem**: CSS server is not running
-**Solution**: Start CSS in another terminal: `cd ../app && bun run solid`
+**Solution**: Start CSS in another terminal:
+- Using devenv: `nix develop` then `devenv up`
+- Manual: `cd solid-dev-server && bun run solid`
 
 ### "Authentication failed" errors
 **Problem**: CSS server restarted and session is stale

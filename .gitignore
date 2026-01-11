@@ -1,4 +1,3 @@
 .conventional-commits.md
 tmp/
-app/.solid-data/
-app/.oxigraph-data/
+.devenv/
